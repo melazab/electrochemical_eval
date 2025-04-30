@@ -1,9 +1,12 @@
+#!/user/bin/python3
+
 """
 CIC_pH_record_data.py uses the UnifiedDataCollector class for combined pH and CIC measurements
 with real-time visualization of measurements.
 """
 
 import time
+
 from unified_data_collector import UnifiedDataCollector
 from waveform_parameters import waveformParameters
 
@@ -99,7 +102,7 @@ def main():
 
         print("\nMeasurement complete!")
         # Export the collected data
-        collector.export_data("combined_CIC_pH_anodic_4mA_CS004L_trial01")
+        collector.export_data("combined_CIC_pH_anodic_test_1")
         print("Data exported successfully")
 
     except KeyboardInterrupt:

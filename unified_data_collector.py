@@ -7,16 +7,17 @@ allowing simultaneous data collection and unified export format.
 Date: 01/14/2025
 """
 
-import pyvisa
-import re
-import time
-from pathlib import Path
-from datetime import datetime
-import numpy as np
-from typing import Optional, Dict, Tuple, List
 import csv
 import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pyvisa
 from matplotlib.gridspec import GridSpec
 
 
@@ -257,10 +258,7 @@ class UnifiedDataCollector:
             return
 
         # Create directory structure
-        data_repository_path = (
-            Path.home()
-            / "Box/Electrical Nerve Block Institute/Data/ElectrodeTesting/STTR/"
-        )
+        data_repository_path = Path.home() / "Documents/STTR/"
         session_path = data_repository_path / datetime.now().strftime("%Y-%m-%d")
         session_path.mkdir(parents=True, exist_ok=True)
 
