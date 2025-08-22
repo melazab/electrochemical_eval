@@ -3,11 +3,15 @@
 Data Collection software for real-time CIC and pH measurements.
 ---------------------------------------------------------------
 This module combines functionality from the Charge Injection
-Capacity testing and pH measurement systems, allowing
-simultaneous data collection and exporting.
+Capacity testing from the Keithley 2450 SourceMeter and the pH
+and temperture measurement from the SPER benchtop meter,
+allowing simultaneous data collection and exporting.
 
-Date: 05/01/2025
+05/19/2025
 Mohamed Elazab
+mxe324@case.edu
+The MetroHealth System
+
 """
 
 import csv
@@ -23,26 +27,83 @@ import numpy as np
 import pyvisa
 
 
+class Keithley:
+    """Class for Keithley 2450 SourcMeter objects"""
+
+    def __init__(self, options: dict):
+        """Initialize Keithley with user experimental settings
+        defined in experimental_configs.py
+        Parameters:
+        options (dict)
+        """
+        self._options = options
+        self.instr = None
+
+    def get_option(self, parameter: str):
+        """Method for returning the value associated with a given parameter"""
+        # TODO: Add error handling to return None for invalid parameters
+        return self._options[parameter]
+
+    def set_option(self, parameter: str, new_value):
+        """Method for setting parameter in the options dict to new_value"""
+        # TODO: Add error handling to return None for invalid parameters and/or invalid values
+        if parameter in self._options:
+            self._options[parameter] = new_value
+
+    def enabled(self):
+        """Method for checking if a Keithley object is enabled or not"""
+        if self.get_option("enable"):
+            return True
+        return False
+
+
+class Sper:
+    """Class for SPER mV-pH Benchtop Meter objects"""
+
+    def __init__(self, options: dict):
+        """Initialize SPER with user experimental settings
+        defined in experimental_configs.py
+        Parameters:
+        options (dict)
+        """
+        self._options = options
+        self.instr = None
+
+    def get_option(self, parameter):
+        """Method for returning the value associated with a given parameter"""
+        return self._options[parameter]
+
+    def set_option(self, parameter: str, new_value):
+        """Method for setting parameter in the options dict to new_value"""
+        # TODO: Add error handling to return None for invalid parameters and/or invalid values
+        if parameter in self._options:
+            self._options[parameter] = new_value
+
+    def enabled(self):
+        """Method for checking if a Sper object is enabled or not"""
+        if self.get_option("enabled"):
+            return True
+        return False
+
+
 class DataCollector:
     """Data Collector Class"""
 
-    def __init__(self, use_ph_meter: bool = True, use_keithley: bool = True):
+    def __init__(self, ph_meter: Sper, smu: Keithley):
         """
         Initialize the data collection system.
 
         Parameters:
-        use_ph_meter (bool): Whether to enable pH meter readings
-        use_keithley (bool): Whether to enable Keithley measurements
+        ph_meter: A Sper object
+        smu: A Keithley object
         """
         # Check if at least one instrument is enabled
-        if not (use_ph_meter or use_keithley):
+        if not (ph_meter.enabled() or smu.enabled()):
             print("No instruments enabled. Exiting program.")
             sys.exit(0)
 
-        self.use_ph_meter = use_ph_meter
-        self.use_keithley = use_keithley
-        self.ph_meter = None
-        self.keithley = None
+        self.ph_meter = ph_meter
+        self.smu = smu
         self.data_buffer = []
         self.experiment_running = True
         self.data_saved = False
@@ -55,14 +116,16 @@ class DataCollector:
         plt.ion()
 
         # Determine plot layout based on enabled instruments
-        if self.use_ph_meter and self.use_keithley:
+        if self.ph_meter.enabled() and self.smu.enabled():
             self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(12, 8))
             self._setup_current_voltage_plot()
             self._setup_ph_temp_plot()
-        elif self.use_keithley:
+        elif self.smu.enabled():
+            # Running a CIC test without pH/temperature measurement
             self.fig, self.ax1 = plt.subplots(1, 1, figsize=(12, 5))
             self._setup_current_voltage_plot()
-        elif self.use_ph_meter:
+        elif self.ph_meter.enabled():
+            # Only measuring pH/temperature
             self.fig, self.ax2 = plt.subplots(1, 1, figsize=(12, 5))
             self._setup_ph_temp_plot()
 
@@ -75,17 +138,17 @@ class DataCollector:
     def _setup_current_voltage_plot(self):
         """Setup current and voltage plot."""
         self.ax1_twin = self.ax1.twinx()
-        (self.voltage_line,) = self.ax1.plot([], [], "b-", label="Voltage")
-        (self.current_line,) = self.ax1_twin.plot([], [], "r-", label="Current")
+        (self.current_line,) = self.ax1.plot([], [], "r-", label="Current")
+        (self.voltage_line,) = self.ax1_twin.plot([], [], "b-", label="Voltage")
 
         self.ax1.set_xlabel("Time (s)")
-        self.ax1.set_ylabel("Voltage (V)", color="b", weight="bold")
-        self.ax1_twin.set_ylabel("Current (mA)", color="r", weight="bold")
+        self.ax1.set_ylabel("Current (mA)", color="r", weight="bold")
+        self.ax1_twin.set_ylabel("Voltage (V)", color="b", weight="bold")
         self.ax1.grid(True)
 
         # Add legend
-        lines = [self.voltage_line, self.current_line]
-        labels = ["Voltage", "Current"]
+        lines = [self.current_line, self.voltage_line]
+        labels = ["Current", "Voltage"]
         self.ax1.legend(lines, labels, loc="upper left")
 
     def _setup_ph_temp_plot(self):
@@ -106,26 +169,26 @@ class DataCollector:
 
     def initialize_instruments(self):
         """Initialize all enabled instruments separately"""
-        if self.use_ph_meter:
-            self._initialize_ph_meter()
+        if self.ph_meter.enabled():
+            self._initialize_sper()
 
-        if self.use_keithley:
+        if self.smu.enabled():
             self._initialize_keithley()
 
-    def _initialize_ph_meter(self):
-        """Initialize pH meter"""
+    def _initialize_sper(self, port_string: str = "/dev/ttyUSB"):
+        """Initialize Sper meter"""
         try:
-            rm = pyvisa.ResourceManager()
+            rm = pyvisa.ResourceManager("@py")
             # First, find the right serial port for pH meter
             ph_port = None
             for port in rm.list_resources():
-                if "/dev/ttyUSB" in port:
+                if port_string in port:
                     ph_port = port
                     break
 
             if not ph_port:
                 print("No serial ports found. Disabling pH measurements.")
-                self.use_ph_meter = False
+                self.pH_meter.set_option("enable", "OFF")
                 return
 
             # Open and configure pH meter
@@ -148,7 +211,7 @@ class DataCollector:
 
         except Exception as e:
             print(f"Error initializing pH meter: {e}")
-            self.use_ph_meter = False
+            self.ph_meter.set_option("enable", "OFF")
 
     def _initialize_keithley(self):
         """Initialize Keithley source meter with PyVISA."""
@@ -164,7 +227,7 @@ class DataCollector:
         self.keithley.timeout = 10000  # 10 seconds timeout
         self.keithley.write("reset()")
         self.keithley.write("defbuffer1.clear()")
-        self.keithley.write("timer.reset()")
+        self.keithley.write("timer.cleartime()")
 
         # Configure source and measurement
         self.keithley.write("smu.source.func = smu.FUNC_DC_CURRENT")
@@ -320,9 +383,9 @@ class DataCollector:
                         temp_values.append(d["temperature"])
 
             # Update voltage/current plot if data exists
-            if self.use_keithley and times and hasattr(self, "voltage_line"):
-                self.voltage_line.set_data(times, voltages)
+            if self.use_keithley and times and hasattr(self, "current_line"):
                 self.current_line.set_data(times, currents)
+                self.voltage_line.set_data(times, voltages)
                 self.ax1.relim()
                 self.ax1.autoscale_view()
                 self.ax1_twin.relim()

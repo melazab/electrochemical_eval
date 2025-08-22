@@ -7,20 +7,22 @@ with real-time visualization of measurements.
 
 import time
 
-from data_collector import DataCollector
-from waveform_parameters import waveformParameters
+from data_collector import DataCollector, Keithley, Sper
+from experimental_configs import keithleyOptions, sperOptions, waveformParameters
 
 
 def main():
     print("Initializing data collection system...")
     # Initialize the unified data collector
-    collector = DataCollector(use_ph_meter=True, use_keithley=False)
-    collector.initialize_instruments()
+    collector = DataCollector(use_ph_meter=True, use_keithley=True)
+    collector.initialize_instruments(sperOptions, keithleyOptions)
 
     try:
         # Configure Keithley similar to your CIC code
         if collector.use_keithley:
-            collector.keithley.write(f"smu.source.vlimit.level = {waveformParameters['complianceVoltage']}")
+            collector.keithley.write(
+                f"smu.source.vlimit.level = {waveformParameters['complianceVoltage']}"
+            )
             collector.keithley.write("timer.cleartime()")
 
         print("\nStarting measurement with real-time visualization...")
